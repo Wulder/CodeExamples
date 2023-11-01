@@ -1,0 +1,26 @@
+#pragma kernel WritePoints
+
+struct Color
+{
+	float r;
+	float g;
+	float b;
+	float a;
+};
+
+struct Point
+{
+	float3 position;
+	Color color;
+};
+
+RWStructuredBuffer<Point> PointsBuffer; 
+RWStructuredBuffer<Point> TargetPoints; 
+int Start;
+int Count;
+
+[numthreads(1024,1,1)]
+void WritePoints(uint3 id : SV_DispatchThreadID)
+{
+    PointsBuffer[Start + id.x] = TargetPoints[id.x];
+}

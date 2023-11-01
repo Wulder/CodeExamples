@@ -1,0 +1,16 @@
+#pragma kernel f1
+
+RWStructuredBuffer<int> buffer;
+RWStructuredBuffer<int> bufferCount;
+
+[numthreads(64,1,1)]
+void f1(uint3 id : SV_DispatchThreadID)
+{
+  
+	if (id.x == 307199)
+	{
+		InterlockedAdd(bufferCount[0], 6);
+	}
+	
+   
+}

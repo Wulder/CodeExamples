@@ -1,0 +1,27 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel Draw
+
+// Create a RenderTexture with enableRandomWrite flag and set it
+// with cs.SetTexture
+RWTexture2D<float4> ColorPreview;
+RWTexture2D<float4> DepthPreview;
+
+
+RWStructuredBuffer<float4> ColorBuffer;
+RWStructuredBuffer<int> DepthBuffer;
+
+float depthScale;
+
+[numthreads(1024,1,1)]
+void Draw (uint3 id : SV_DispatchThreadID)
+{
+    
+
+    int xPos = id.x % 640;
+	int yPos = id.x / 640; 
+	 
+	ColorPreview[int2(xPos,yPos)] = ColorBuffer[id.x];
+
+	float depthValue = (float)DepthBuffer[id.x]/65535*depthScale;
+	DepthPreview[int2(xPos,yPos)] = float4(depthValue,depthValue, depthValue,65536);
+}

@@ -1,0 +1,247 @@
+﻿#pragma kernel CreatePoint
+#pragma kernel WritePoints
+struct Color
+{
+	float r;
+	float g;
+	float b;
+	float a;
+};
+
+struct Point
+{
+	float3 position;
+	Color color;
+	int X;
+    int Y;
+    int RawDepthValue;
+    int ProcessedDepthValue;
+};
+
+struct PointData
+{
+	Point p;
+
+	int hash;
+	int lvls[7];
+	int pointIndex;
+	float3 localPos;
+};
+
+
+
+RWStructuredBuffer<Color> colors;
+RWStructuredBuffer<uint> depth; 
+RWStructuredBuffer<int> confidence; 
+
+
+
+RWStructuredBuffer<Point> graphicsBuffers[100];
+RWStructuredBuffer<PointData> tempPoints;
+RWStructuredBuffer<PointData> writingPoints;
+
+
+
+int minimumConfidence;
+int rootSize;
+int voxelBlockSize;
+int floorValue;
+int octreeDepth;
+int output;
+
+float depthScale;
+
+float fx;
+float fy;
+float cx;
+float cy;
+
+float3 cameraPosition;
+float3 cameraDirection;
+float3 cameraDirectionRight;
+float3 cameraDirectionUp;
+float3 pivotPoint;
+
+
+float relatives[4];
+float filterTreshold;
+
+
+
+
+
+int GetIndexByPos(float3 pos, int size)
+{
+     return (int)(pos.x + (pos.y * size) + ((size * size) * pos.z));
+}
+
+int GetIndexByPos(int3 pos, int size)
+{
+        return (pos.x + (pos.y * size) + ((size * size) * pos.z));
+}
+
+int GetIndexInOctree(float3 pos, float size)
+{
+        int index = 0;
+
+        index = pos.z < size / 2 ? 0 : 4;
+        index += pos.y < size / 2 ? 0 : 2;
+        index += pos.x < size / 2 ? 0 : 1;
+
+        return index;
+}
+
+
+float3 GetDevidedVecByIndex(int index, int lvl)
+    {
+		float values[9] = { 0.5, 0.25, 0.125, 0.0625, 0.03125,0.015625,0.0078125,0.00390625,0.001953125 };
+        float3 result = float3(0,0,0);
+
+        if (index == 1 || index == 3 || index == 5 || index == 7)
+        {
+            result.x = values[lvl];
+        }
+
+        if (index == 2 || index == 3 || index == 6 || index == 7)
+        {
+            result.y = values[lvl];
+        }
+
+        if (index >= 4)
+        {
+            result.z = values[lvl];
+        }
+
+
+        return result;
+    }
+
+[numthreads(1024, 1, 1)]
+void CreatePoint(uint3 id : SV_DispatchThreadID)
+{
+	
+	Point p = tempPoints[id.x].p;
+	int xPos = id.x % 640;
+	int yPos = id.x / 640;
+
+		p.X = xPos;
+		p.Y = yPos;
+		p.RawDepthValue = depth[id.x];
+		
+
+	if(confidence[id.x] < minimumConfidence) return;
+
+	float depthValue = (float)(depth[id.x]/65535.0);
+	depthValue *= depthScale;
+	
+
+	if (depth[id.x] > 0)
+	{
+
+		p.position = cameraPosition;
+
+		float x = depthValue * (xPos - cx) / fx;
+		float y = depthValue * (yPos - cy) / fy;
+		float z = depthValue;
+
+		p.position += -cameraDirectionUp * x;
+		p.position += cameraDirectionRight * y;
+		p.position += cameraDirection * z;
+
+		p.color = colors[id.x];
+
+		p.position = floor(p.position * floorValue*1)/(floorValue*1);
+
+		
+		
+		int3 flooredPos = floor(p.position);
+	
+		tempPoints[id.x].hash = GetIndexByPos(flooredPos, rootSize);
+
+        int lvlIndex = 0;
+        float3 vec = float3(0,0,0);
+        float3 localPos = p.position - flooredPos;
+		tempPoints[id.x].localPos = localPos;
+
+		float octreeSizes[10] = { 1, 0.5, 0.25, 0.125, 0.0625,0.03125,0.015625,0.0078125,0.00390625,0.001953125 };
+
+        for (int j = 0; j < octreeDepth; j++)
+        {
+                lvlIndex = GetIndexInOctree(localPos, octreeSizes[j]);
+                vec = GetDevidedVecByIndex(lvlIndex, j);
+                localPos -= vec;
+
+				tempPoints[id.x].lvls[j] = lvlIndex;
+        }
+
+
+		tempPoints[id.x].p = p; 
+		tempPoints[id.x].pointIndex = GetIndexByPos(localPos * floorValue, voxelBlockSize);
+
+	}
+}
+
+
+
+int gBufferSize;
+int outOcuppiedPoints;
+RWStructuredBuffer<int> ocuppiedPoints;
+RWStructuredBuffer<Point> gBuffer1, gBuffer2, gBuffer3;
+
+
+[numthreads(1024, 1, 1)]
+void WritePoints(uint3 id : SV_DispatchThreadID)
+{
+	int outv = 0;
+
+	PointData pointData = writingPoints[id.x];
+	float3 zeroVec = float3(0,0,0);
+	int subBufferIndex;
+
+	if(pointData.p.position.x != zeroVec.x)
+	{
+		subBufferIndex = id.x/gBufferSize;
+	}
+	else
+	{
+		return;
+	}
+
+	
+
+	if(subBufferIndex == 0)
+	{
+		
+		InterlockedCompareExchange(gBuffer1[pointData.pointIndex].ProcessedDepthValue,0,9999,outv);
+		if(outv == 0)
+		{
+			InterlockedAdd(ocuppiedPoints[0],1);
+		}
+
+		gBuffer1[pointData.pointIndex] = pointData.p;
+		gBuffer1[pointData.pointIndex].ProcessedDepthValue = 999;
+		return;
+	}
+    
+	if(subBufferIndex == 1)
+	{
+		
+		gBuffer2[pointData.pointIndex] = pointData.p;
+		return;
+	}
+	if(subBufferIndex == 2)
+	{
+		
+		gBuffer3[pointData.pointIndex] = pointData.p;
+		return;
+	}
+}
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,118 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+
+struct Color
+{
+	float r;
+	float g;
+	float b;
+	float a;
+};
+
+struct Point
+{
+	float3 position;
+	Color color;
+};
+
+
+
+RWStructuredBuffer<Point> points;
+RWStructuredBuffer<Color> colors;
+RWStructuredBuffer<int> depth;
+RWStructuredBuffer<int> pCount;
+
+
+
+float depthSize;
+float fx;
+float fy;
+float cx;
+float cy;
+
+float far;
+float near;
+
+float3 cameraPosition;
+float3 cameraDirection;
+float3 cameraDirectionRight;
+float3 cameraDirectionUp;
+
+int startPointer;
+int framePointer = 0;
+
+float relatives[4];
+float filterTreshold;
+
+[numthreads(1024, 1, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+	Point p = points[id.x];
+	int xPos = id.x % 640;
+	int yPos = id.x / 640;
+
+	float depthValue = (float)(depth[id.x] / 65535.0) * depthSize;
+
+	filterTreshold = 0.8;
+	relatives[0] = 0;
+	relatives[1] = 0;
+	relatives[2] = 0;
+	relatives[3] = 0;
+	if (xPos > 0)
+	{
+		relatives[0] = (float)depth[id.x] / (float)depth[id.x - 1];
+	}
+	if (xPos < 640 - 1)
+	{
+		relatives[1] = (float)depth[id.x] / (float)depth[id.x + 1];
+	}
+	if (yPos > 0)
+	{
+		relatives[2] = (float)depth[id.x] / (float)depth[id.x - 640];
+	}
+	if (yPos < 480 - 1)
+	{
+		relatives[3] = (float)depth[id.x] / (float)depth[id.x + 640];
+	}
+
+	if (relatives[0] < filterTreshold || relatives[1] < filterTreshold || relatives[2] < filterTreshold || relatives[3] < filterTreshold)
+	{
+		return;
+	}
+	
+	
+	
+
+
+	if (depth[id.x].r > near && depth[id.x] < far && depth[id.x] > 0)
+	{
+		InterlockedAdd(pCount[0], 1, framePointer);
+		p.position = cameraPosition;
+
+		float x = depthValue * (xPos - cx) / fx;
+		float y = depthValue * (yPos - cy) / fy;
+		float z = depthValue;
+
+		p.position +=  - cameraDirectionUp * x;
+		p.position += cameraDirectionRight * y;
+		p.position += cameraDirection * z;
+
+		//p.position = round(p.position*200)/200; //rounding
+
+		p.color = colors[id.x];
+
+		points[startPointer + framePointer] = p;
+
+
+	}
+
+
+
+
+
+}
+
+
+
+
+

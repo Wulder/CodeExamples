@@ -1,0 +1,49 @@
+
+#pragma kernel Filter
+
+
+RWStructuredBuffer<int> Depth;
+float filterTreshold;
+int near;
+int far;
+int width;
+int height;
+
+[numthreads(1024,1,1)]
+void Filter (uint3 id : SV_DispatchThreadID)
+{
+    
+	int xPos = id.x % width;
+	int yPos = id.x / width;
+	
+    float relativesX = 0;
+	float relativesY = 0;
+	
+	
+	if(xPos == 0 || xPos == width-1 || yPos == 0 || yPos == height-1)
+	{
+		Depth[id.x] = 0;
+
+		return;
+	}
+
+	if (xPos > 0 && xPos < width - 1)
+	{
+		relativesX = abs(Depth[id.x-1] - Depth[id.x + 1]);
+	}
+	
+	if (yPos > 0 & yPos < height - 1)
+	{
+		relativesY = abs(Depth[id.x - width] - Depth[id.x + width]);
+	}
+	
+
+	if (relativesX > filterTreshold || relativesY > filterTreshold || Depth[id.x] < near || Depth[id.x] > far)
+	{
+		Depth[id.x] = 0;
+		
+		return;
+		
+	}
+        
+}
